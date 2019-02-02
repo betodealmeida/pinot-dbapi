@@ -53,23 +53,44 @@ def check_result(f):
     return g
 
 
-def get_description_from_row(row):
+def get_description_from_rows(rows):
     """
-    Return description from a single row.
+    Return description by scraping the rows
 
     We only return the nameand  type (inferred from the data).
     """
+    types = {}
+    unknown_columns = 0
+    for row in rows:
+        for name, value in row.items():
+            if name not in types:
+                types[name] = None
+                unknown_columns += 1
+            current_type = types[name]
+            if value is not None:
+                new_type = get_type(value)
+                assert new_type is not None, f'No known type for {value}'
+                if current_type is None:
+                    types[name] = new_type
+                    unknown_columns -= 1
+                elif new_type is not current_type:
+                    raise exceptions.DatabaseError(
+                            f'Differing column type found for column {name}:'
+                            f'{current_type} vs {new_type}')
+        if unknown_columns <= 0:
+            break
+
     return [
         (
             name,               # name
-            get_type(value),    # type_code
+            type,               # type_code
             None,               # [display_size]
             None,               # [internal_size]
             None,               # [precision]
             None,               # [scale]
             None,               # [null_ok]
         )
-        for name, value in row.items()
+        for name, type in types.items()
     ]
 
 
@@ -280,7 +301,7 @@ class Cursor(object):
         self.description = None
         self._results = []
         if rows:
-            self.description = get_description_from_row(rows[0])
+            self.description = get_description_from_rows(rows)
             Row = namedtuple('Row', rows[0].keys(), rename=True)
             self._results = [Row(*row.values()) for row in rows]
 
